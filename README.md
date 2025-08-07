@@ -1,6 +1,6 @@
 # GEEKROS REACT ASSISTANT PLAYGROUND
 
-⚡ A Real-Time AI Assistant Playground Built for the Web Browser ⚡
+⚡ A Real-Time AI Assistant Playground Built for the Browser ⚡
 
 ## License
 
