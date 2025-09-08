@@ -1,0 +1,33 @@
+{
+    "example": {
+        "language": "Language",
+        "subtitle": "This is a simple starter template for building React applications with Vite and TypeScript.",
+        "description": "You can start building your application from here.",
+        "code": "Code"
+    },
+    "common": {
+        "clean": "Clean",
+        "cancel": "Cancel",
+        "close": "Close",
+        "confirm": "Confirm",
+        "ok": "OK",
+        "save": "Save",
+        "delete": "Delete",
+        "edit": "Edit",
+        "add": "Add",
+        "view": "View",
+        "update": "Update",
+        "create": "Create",
+        "connect": "Connect",
+        "connecting": "Connecting",
+        "disconnect": "Disconnect",
+        "choose_camera": "Choose Camera",
+        "choose_microphone": "Choose Microphone",
+        "start_call": "Start Call",
+        "end_call": "End Call",
+        "send": "Send"
+    },
+    "chat": {
+        "input_placeholder": "Type your message..."
+    }
+}
