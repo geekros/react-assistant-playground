@@ -222,24 +222,15 @@ export const MediaDeviceContext = ({ children, ...props }: MediaProps) => {
         update_drawboard: update_drawboard,
     };
 
-    // Log changes in microphone state
-    useEffect(() => {}, [microphone]);
-
-    // Log changes in camera state
-    useEffect(() => {}, [camera]);
-
-    // Log changes in screenshare state
-    useEffect(() => {}, [screenshare]);
-
     // Side effect to log when the context is initialized
     useEffect(() => {
         // Initialize MediaDevice, MediaDisplay, and MediaDraw instances
-        const device_temp = useLibs.media.MediaDevice;
-        const display_temp = useLibs.media.MediaDisplay;
-        const draw_temp = useLibs.media.MediaDraw;
+        const device = useLibs.media.MediaDevice;
+        const display = useLibs.media.MediaDisplay;
+        const draw = useLibs.media.MediaDraw;
 
         // Set up device change listeners
-        device_temp.onDevicechange = (_event: Event) => {
+        device.onDevicechange = (_event: Event) => {
             navigator.mediaDevices.enumerateDevices().then((devices: any) => {
                 const audio_inputs: InputDeviceInfo[] = [];
                 const video_inputs: InputDeviceInfo[] = [];
@@ -259,8 +250,8 @@ export const MediaDeviceContext = ({ children, ...props }: MediaProps) => {
         };
 
         // Set up display close listener
-        display_temp.onDevicechange = (_event: Event) => {
-            display_temp.onClose();
+        display.onDevicechange = (_event: Event) => {
+            display.onClose();
             screenshare.enabled = true;
             screenshare.loading = false;
             screenshare.initialization = false;
@@ -268,13 +259,13 @@ export const MediaDeviceContext = ({ children, ...props }: MediaProps) => {
         };
 
         // Set draw data
-        draw_temp.data = drawboard;
-        draw_temp.update_data = update_drawboard;
+        draw.data = drawboard;
+        draw.update_data = update_drawboard;
 
         // Update state with initialized device and display
-        update_device(device_temp);
-        update_display(display_temp);
-        update_draw(draw_temp);
+        update_device(device);
+        update_display(display);
+        update_draw(draw);
     }, []);
 
     // Render the context provider with the defined value

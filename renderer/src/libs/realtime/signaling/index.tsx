@@ -14,12 +14,24 @@
 
 import { IsLocalHost } from "@/libs/network";
 
+export interface SignalingMessage {
+    event: string;
+    data: {
+        channel: string;
+        from: string;
+        target: string;
+        content: string;
+    };
+    Error?: string;
+    Time: number;
+}
+
 export class RealtimeSignaling {
     // The base URL of the signaling server.
     public baseUrl: string = "https://signaling.geekros.com";
 
     // The base path of the signaling server.
-    public basePath: string = "/handler/realtime/signaling/connection";
+    public basePath: string = "/handler/signaling/connection";
 
     // The WebSocket path of the signaling server.
     public socket: WebSocket | null = null;
@@ -66,7 +78,7 @@ export class RealtimeSignaling {
     heartbeat(): void {
         this.socket_heartbeat = window.setInterval(() => {
             if (this.socket) {
-                this.send({ event: "heartbeat" });
+                this.send(JSON.stringify({ event: "human:heartbeat" }));
             }
         }, 42125);
     }
@@ -79,7 +91,7 @@ export class RealtimeSignaling {
     }
 
     // Disconnect the WebSocket connection
-    disconnect(): void {
+    close(): void {
         if (this.socket) {
             clearInterval(this.socket_heartbeat);
             this.socket.close();

@@ -25,17 +25,14 @@ import { RouterProvider } from "react-router-dom";
 import { Router } from "./router";
 import { LanguageContext } from "./hooks/context/language";
 import { ThemeContext } from "./hooks/context/theme";
-import { MediaDeviceContext } from "./hooks/context/media";
 
 // Render the app.
 createRoot(document.getElementById("root")!).render(
     <ThemeContext defaultMode="system" defaultTheme="default">
         <LanguageContext>
-            <MediaDeviceContext>
-                <div className="page theme-container">
-                    <RouterProvider router={Router} />
-                </div>
-            </MediaDeviceContext>
+            <div className="page theme-container">
+                <RouterProvider router={Router} />
+            </div>
         </LanguageContext>
     </ThemeContext>
 );

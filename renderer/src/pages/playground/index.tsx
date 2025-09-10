@@ -36,6 +36,7 @@ import { AssistantMultimodalVisualizerCamera } from "@/components/multimodal/vis
 import { AssistantMultimodalVisualizerScreenshare } from "@/components/multimodal/visualizer/screenshare";
 import { RealtimeContext, useRealtime } from "@/hooks/context/realtime";
 import { useLibs } from "@/libs";
+import { SignalingMessage } from "@/libs/realtime/signaling";
 
 // Playground properties
 export type PlaygroundProps = {
@@ -73,7 +74,7 @@ export function PagePlaygroundIndex() {
     const { lang } = useLanguage();
 
     // Get media context
-    const { device, display, draw, microphone, camera, screenshare, update_microphone, update_camera, update_screenshare } = useMediaDevice();
+    const { device, display, draw, camera, microphone, screenshare, update_camera, update_microphone, update_screenshare } = useMediaDevice();
 
     // Realtime context
     const { authorize, signaling, connection, update_authorize, update_signaling, update_connection } = useRealtime();
@@ -93,6 +94,8 @@ export function PagePlaygroundIndex() {
 
         // Toggle screenshare
         if (screenshare.initialization) {
+            connection.api.removeTrack(screenshare.active_device_track);
+            update_connection(connection);
             onDisplayClose();
             return;
         }
@@ -104,36 +107,34 @@ export function PagePlaygroundIndex() {
         // Request display media
         display.GetDisplay(
             (media_stream: MediaStream, active_video_track: MediaStreamTrack) => {
-                if (media_stream.getVideoTracks().length > 0) {
-                    // Set up screenshare element
-                    screenshare.stream = media_stream;
-                    screenshare.active_device_track = active_video_track;
-                    screenshare.enabled = !active_video_track.enabled;
-                    screenshare.loading = false;
-                    screenshare.initialization = true;
-                    update_screenshare(screenshare);
+                // Update screenshare state
+                screenshare.stream = media_stream;
+                screenshare.active_device_track = active_video_track;
+                screenshare.enabled = !active_video_track.enabled;
+                screenshare.loading = false;
+                screenshare.initialization = true;
+                update_screenshare(screenshare);
 
-                    // Play screenshare stream after a short delay
-                    setTimeout(() => {
-                        const video: any = document.getElementById("multimodal_screenshare_stream");
-                        if (video) {
-                            video.srcObject = media_stream;
-                            video.onloadedmetadata = function (_e: any) {
-                                video.play();
-                            };
-                        }
-                    }, 500);
-                } else {
-                    // Indicate loading state
-                    screenshare.loading = false;
-                    update_screenshare(screenshare);
-                }
+                // Add tracks to the peer connection
+                connection.api.addTracks(screenshare.stream);
+                update_connection(connection);
+
+                // Handle successful media stream
+                setTimeout(() => {
+                    const video: any = document.getElementById("multimodal_screenshare_stream");
+                    if (video) {
+                        video.srcObject = media_stream;
+                        video.onloadedmetadata = function (_e: any) {
+                            video.play();
+                        };
+                    }
+                }, 500);
             },
             (error: any) => {
-                // Indicate loading state
-                screenshare.loading = false;
-                update_screenshare(screenshare);
                 // Handle error
+                screenshare.loading = false;
+                screenshare.initialization = false;
+                update_screenshare(screenshare);
                 playground.error = error.message;
                 update(playground);
             }
@@ -185,86 +186,123 @@ export function PagePlaygroundIndex() {
         }
 
         // Get access token and proceed with connection
-        useLibs.realtime.authorize.accesstoken("human", (data: any) => {
+        authorize.api = useLibs.realtime.authorize;
+        update_authorize(authorize);
+        // Request access token
+        authorize.api.accesstoken("human", (data: any) => {
             if (data.code === 0) {
                 // Save token to context
                 authorize.token = data.data.access_token;
+                authorize.role = data.data.role;
+                authorize.channel = data.data.channel;
                 update_authorize(authorize);
-
-                // Request media devices
-                device.GetMedia(
-                    (
-                        media_stream: MediaStream,
-                        audios: InputDeviceInfo[],
-                        active_audio: InputDeviceInfo,
-                        active_audio_track: MediaStreamTrack,
-                        videos: InputDeviceInfo[],
-                        active_video: InputDeviceInfo,
-                        active_video_track: MediaStreamTrack
-                    ) => {
-                        useLibs.realtime.signaling.connection(
-                            authorize.token,
-                            (_event: any) => {
-                                // Save WebSocket to context
-                                signaling.socket = _event.currentTarget;
-                                update_signaling(signaling);
-
-                                // Set up audio element
-                                microphone.stream = media_stream;
-                                microphone.devices = audios;
-                                microphone.active_device = active_audio;
-                                microphone.active_device_track = active_audio_track;
-                                microphone.enabled = !active_audio_track.enabled;
-                                microphone.loading = false;
-                                microphone.initialization = true;
-                                update_microphone(microphone);
-
-                                // Set up video element
-                                camera.stream = media_stream;
-                                camera.devices = videos;
-                                camera.active_device = active_video;
-                                camera.active_device_track = active_video_track;
-                                camera.enabled = !active_video_track.enabled;
-                                camera.loading = false;
-                                camera.initialization = true;
-                                update_camera(camera);
-
-                                // Play audio stream after a short delay
-                                setTimeout(() => {
-                                    // Set up audio element
-                                    const audio: any = document.getElementById("multimodal_audio_stream");
-                                    if (audio) {
-                                        audio.srcObject = media_stream;
-                                        audio.onloadedmetadata = function (_e: any) {
-                                            audio.play();
-                                        };
-                                    }
-                                }, 500);
-
-                                // Update playground state
-                                playground.error = "";
-                                playground.connected_loading = false;
-                                playground.connected = true;
-                                update(playground);
-                            },
-                            (message: any) => {
-                                const message_json = JSON.parse(message.data);
-                                console.log("Received message:", message_json);
-                            },
-                            (event: any) => {
-                                console.error("WebSocket error occurred:", event);
-                            },
-                            (event: any) => {
-                                console.log("WebSocket connection closed:", event);
-                                onConnectionClose();
-                            }
-                        );
+                // Establish signaling connection
+                signaling.api = useLibs.realtime.signaling;
+                update_signaling(signaling);
+                // Connect to signaling server
+                signaling.api.connection(
+                    authorize.token,
+                    (_event: any) => {
+                        // Save WebSocket to context
+                        signaling.socket = _event.currentTarget;
+                        update_signaling(signaling);
                     },
-                    (error: any) => {
-                        // Handle error
-                        playground.error = error.message;
-                        playground.connected_loading = false;
-                        update(playground);
+                    (message: any) => {
+                        const message_json = JSON.parse(message.data);
+                        switch (message_json.event) {
+                            case "signaling:connected":
+                                const message_data = message_json.data;
+                                const message_content = JSON.parse(message_data.content);
+                                // Request media devices
+                                device.GetMedia(
+                                    (
+                                        media_stream: MediaStream,
+                                        audios: InputDeviceInfo[],
+                                        active_audio: InputDeviceInfo,
+                                        active_audio_track: MediaStreamTrack,
+                                        videos: InputDeviceInfo[],
+                                        active_video: InputDeviceInfo,
+                                        active_video_track: MediaStreamTrack
+                                    ) => {
+                                        // Set up audio element
+                                        microphone.stream = media_stream;
+                                        microphone.devices = audios;
+                                        microphone.active_device = active_audio;
+                                        microphone.active_device_track = active_audio_track;
+                                        microphone.enabled = !active_audio_track.enabled;
+                                        microphone.loading = false;
+                                        microphone.initialization = true;
+                                        update_microphone(microphone);
+
+                                        // Set up video element
+                                        camera.stream = media_stream;
+                                        camera.devices = videos;
+                                        camera.active_device = active_video;
+                                        camera.active_device_track = active_video_track;
+                                        camera.enabled = !active_video_track.enabled;
+                                        camera.loading = false;
+                                        camera.initialization = true;
+                                        update_camera(camera);
+
+                                        // Handle successful media stream
+                                        setTimeout(() => {
+                                            // Set up audio element
+                                            const audio: any = document.getElementById("multimodal_audio_stream");
+                                            if (audio) {
+                                                audio.srcObject = media_stream;
+                                                audio.onloadedmetadata = function (_e: any) {
+                                                    audio.play();
+                                                };
+                                            }
+                                        }, 500);
+
+                                        // Save connection ID to context
+                                        onPeerConnection(message_content.urls);
+
+                                        // Update playground state
+                                        playground.error = "";
+                                        playground.connected_loading = false;
+                                        playground.connected = true;
+                                        update(playground);
+                                    },
+                                    (error: any) => {
+                                        // Handle error
+                                        microphone.loading = false;
+                                        microphone.initialization = false;
+                                        update_microphone(microphone);
+                                        camera.loading = false;
+                                        camera.initialization = false;
+                                        update_camera(camera);
+                                        playground.error = error.message;
+                                        playground.connected_loading = false;
+                                        update(playground);
+                                    }
+                                );
+                                break;
+                            case "signaling:answer":
+                                const remote_answer = JSON.parse(message_json.data.content);
+                                connection.api.peerConnection?.setRemoteDescription(remote_answer).then(() => {
+                                    console.log("[signaling:answer]", "Remote description set successfully");
+                                });
+                                update_connection(connection);
+                                break;
+                            case "signaling:candidate":
+                                const remote_candidate = JSON.parse(message_json.data.content);
+                                connection.api.peerConnection?.addIceCandidate(remote_candidate).then(() => {
+                                    console.log("[signaling:candidate]", "Remote candidate added successfully");
+                                });
+                                update_connection(connection);
+                                break;
+                            default:
+                                break;
+                        }
+                    },
+                    (event: any) => {
+                        console.log("WebSocket error occurred:", event);
+                    },
+                    (event: any) => {
+                        console.log("WebSocket connection closed:", event);
+                        onConnectionClose();
                     }
                 );
             } else {
@@ -275,17 +313,69 @@ export function PagePlaygroundIndex() {
         });
     }
 
+    // Handle peer connection setup
+    function onPeerConnection(stun_urls: string[]) {
+        // Create a new RealtimeConnection instance
+        connection.api = useLibs.realtime.connection;
+        update_connection(connection);
+        // Establish peer connection
+        connection.api.createConnection(stun_urls, microphone.stream, camera.stream, (event: any) => {
+            if (event.type && event.type !== "") {
+                switch (event.type) {
+                    case "realtime:connection:offer":
+                        // Initialize offer message
+                        const message_offer: SignalingMessage = {
+                            event: "client:offer",
+                            data: {
+                                channel: authorize.channel,
+                                from: "human",
+                                target: "signaling",
+                                content: event.sdp,
+                            },
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send offer via signaling server
+                        signaling.socket?.send(JSON.stringify(message_offer));
+                        break;
+                    case "realtime:connection:candidate":
+                        // Initialize ICE candidate message
+                        const message_candidate: SignalingMessage = {
+                            event: "client:candidate",
+                            data: {
+                                channel: authorize.channel,
+                                from: "human",
+                                target: "signaling",
+                                content: event.candidate,
+                            },
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send ICE candidate via signaling server
+                        signaling.socket?.send(JSON.stringify(message_candidate));
+                        break;
+                    default:
+                        break;
+                }
+            }
+        });
+    }
+
     // Handle connection close
     function onConnectionClose() {
         playground.message.input = "";
         playground.message.send_loading = false;
         playground.message.hidden = true;
         playground.draw.hidden = true;
+        playground.error = "";
         playground.connected = !playground.connected;
         playground.connected_loading = false;
+        update(playground);
         draw.onClear(true);
         device.onClose();
-        update(playground);
+        display.onClose();
+        signaling.api.close();
+        update_signaling(signaling);
+        connection.api.close();
+        update_connection(connection);
     }
 
     // Set document title on mount

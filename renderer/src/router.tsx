@@ -19,6 +19,7 @@ import { NotFound } from "./pages/404";
 import { PageExampleIndex } from "./pages/example";
 import { PagePlaygroundIndex } from "./pages/playground";
 import { PageIndex } from "./pages";
+import { MediaDeviceContext } from "./hooks/context/media";
 
 // Define the routes.
 const router_page: any = [
@@ -36,7 +37,11 @@ const router_page: any = [
     },
     {
         path: "/playground",
-        element: <PagePlaygroundIndex />,
+        element: (
+            <MediaDeviceContext>
+                <PagePlaygroundIndex />
+            </MediaDeviceContext>
+        ),
     },
     {
         path: "*",

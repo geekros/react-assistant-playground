@@ -14,118 +14,153 @@
 
 export class RealtimeConnection {
     // The RTCPeerConnection instance.
-    public peer: RTCPeerConnection | null = null;
+    public peerConnection: RTCPeerConnection | null = null;
+
+    // The STUN server URLs.
+    public stun_urls: string[] = [];
+
+    // The remote audio track.
+    public remote_audio_track: MediaStreamTrack | null = null;
+
+    // The RTCDataChannel instance.
+    public chat_data_channel: RTCDataChannel | null = null;
+
+    // The RTCDataChannel instance.
+    public draw_data_channel: RTCDataChannel | null = null;
+
+    // The callback function to handle events.
+    public callback: any = null;
 
     // The RTCDataChannel instance.
     constructor() {}
 
     // Create a new RTCPeerConnection.
-    createConnection(): RealtimeConnection {
+    createConnection(stun_urls: string[], audio: MediaStream, video: MediaStream, callback: any): RealtimeConnection {
+        // Store the callback function.
+        this.callback = callback;
+
         // Use Google's public STUN server for ICE candidates.
-        this.peer = new RTCPeerConnection({
-            iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
+        this.peerConnection = new RTCPeerConnection({
+            iceServers: [{ urls: stun_urls }],
+        });
+
+        // Add audio tracks to the peer connection.
+        audio.getTracks().forEach((track: MediaStreamTrack) => {
+            if (track.kind === "audio") {
+                this.peerConnection?.addTrack(track, audio);
+            }
+        });
+
+        // Add video tracks to the peer connection.
+        video.getTracks().forEach((track: MediaStreamTrack) => {
+            if (track.kind === "video") {
+                this.peerConnection?.addTrack(track, video);
+            }
         });
 
         // Handle incoming tracks.
-        this.peer.ontrack = this.onTrack.bind(this);
+        this.peerConnection.ontrack = (event: RTCTrackEvent) => {
+            // If the track is audio, store it.
+            if (event.track.kind === "audio") {
+                // Store the remote audio track.
+                this.remote_audio_track = event.track;
+            }
+        };
 
-        // Handle ICE candidates.
-        this.peer.onicecandidate = this.onIcecandidate.bind(this);
+        this.peerConnection.ondatachannel = (event: RTCDataChannelEvent) => {
+            console.log("Data channel received:", event);
+        };
 
-        // Handle incoming data channels.
-        this.peer.ondatachannel = this.onChannel.bind(this);
+        // Handle new ICE candidates.
+        this.peerConnection.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+            // If the peer connection exists and there's a new candidate, handle it.
+            if (event.candidate) {
+                // Send the new ICE candidate to the remote peer via signaling server.
+                this.callback({
+                    type: "realtime:connection:candidate",
+                    candidate: event.candidate,
+                });
+            }
+        };
 
-        // Log connection state changes.
-        this.peer.onconnectionstatechange = this.onConnectionStateChange.bind(this);
+        // Handle connection state changes.
+        this.chat_data_channel = this.peerConnection.createDataChannel("chat");
+
+        // Create a data channel for drawing data.
+        this.draw_data_channel = this.peerConnection.createDataChannel("draw");
+
+        // Create an offer to initiate the connection.
+        this.createOffer();
 
         // Log signaling state changes.
         return this;
     }
 
-    // Handle incoming tracks.
-    onTrack(event: RTCTrackEvent) {
-        console.log("Track event:", event);
-    }
-
-    // Handle ICE candidates.
-    onIcecandidate(event: RTCPeerConnectionIceEvent) {
-        console.log("ICE candidate event:", event);
-    }
-
-    // Handle incoming data channels.
-    onChannel(event: RTCDataChannelEvent) {
-        // Ensure the event and channel exist.
-        if (!event || !event.channel) return;
-
-        const channel = event.channel;
-    }
-
-    // Handle connection state changes.
-    onConnectionStateChange(event: Event) {
-        console.log("Connection state change event:", event);
-    }
-
-    // Create an offer and set it as the local description.
+    // Create an offer to initiate the connection.
     createOffer() {
-        this.peer?.createOffer().then((offer: RTCSessionDescriptionInit) => {
-            this.peer?.setLocalDescription(offer);
+        // If the peer connection doesn't exist, return early.
+        if (!this.peerConnection) return;
+
+        this.peerConnection
+            .createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true,
+            })
+            .then((offer: RTCSessionDescriptionInit) => {
+                // Set the local description with the created offer.
+                this.peerConnection?.setLocalDescription(offer);
+                this.callback({
+                    type: "realtime:connection:offer",
+                    sdp: JSON.stringify(offer),
+                });
+            });
+    }
+
+    // Add tracks to the peer connection.
+    addTracks(media: MediaStream) {
+        console.log("Adding tracks to the peer connection:", media);
+        // Add audio tracks to the peer connection.
+        media.getTracks().forEach((track: MediaStreamTrack) => {
+            console.log("Adding audio track:", track);
+            this.peerConnection?.addTrack(track, media);
         });
+        // Update a new offer after adding tracks.
+        this.createOffer();
     }
 
-    // Create an answer and set it as the remote description.
-    createAnswer() {
-        this.peer?.createAnswer().then((answer: RTCSessionDescriptionInit) => {
-            this.peer?.setRemoteDescription(answer);
+    // Remove tracks from the peer connection.
+    removeTrack(track: MediaStreamTrack) {
+        // If the peer connection doesn't exist, return early.
+        if (!this.peerConnection) return;
+        // Remove the specified track from the peer connection.
+        this.peerConnection.getSenders().forEach((sender: RTCRtpSender) => {
+            if (sender.track === track) {
+                this.peerConnection?.removeTrack(sender);
+            }
         });
-    }
-
-    // Set the remote description.
-    addIceCandidate(candidate: RTCIceCandidateInit) {
-        this.peer?.addIceCandidate(new RTCIceCandidate(candidate));
-    }
-
-    // Add a track to the RTCPeerConnection.
-    addTrack(track: MediaStreamTrack, stream: MediaStream) {
-        this.peer?.addTrack(track, stream);
-    }
-
-    // Create a data channel.
-    addChannel(label: string, open: (event: any) => void, message: (event: any) => void, failed: (event: any) => void, close: (event: any) => void): RTCDataChannel | undefined {
-        // Ensure the peer connection exists.
-        if (!this.peer) return;
-
-        // Create the data channel with the specified label.
-        const channel = this.peer.createDataChannel(label, { ordered: true });
-
-        // Set up event handlers for the data channel.
-        channel.onopen = (event) => {
-            open(event);
-        };
-
-        // Handle incoming messages.
-        channel.onmessage = (event) => {
-            message(event);
-        };
-
-        // Handle errors.
-        channel.onerror = (error) => {
-            failed(error);
-        };
-
-        // Handle the closing of the data channel.
-        channel.onclose = (error) => {
-            close(error);
-        };
-
-        // Return the created data channel.
-        return channel;
+        // Update a new offer after removing the track.
+        this.createOffer();
     }
 
     // Close the RTCPeerConnection.
     close() {
-        if (this.peer) {
-            this.peer.close();
-            this.peer = null;
+        // If the peer connection exists, close it and clean up.
+        if (this.peerConnection) {
+            // Remove all senders.
+            this.peerConnection.getSenders().forEach((sender: RTCRtpSender) => {
+                this.peerConnection?.removeTrack(sender);
+            });
+            // Clear the remote audio track.
+            this.remote_audio_track = null;
+            // Clear the data channels.
+            this.chat_data_channel = null;
+            this.draw_data_channel = null;
+            // Close the peer connection.
+            this.peerConnection.close();
+            // Clear the Callback.
+            this.callback = null;
+            // Clean up.
+            this.peerConnection = null;
         }
     }
 }

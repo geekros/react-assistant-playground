@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { RealtimeAuthorize, RealtimeConnection, RealtimeSignaling } from "@/libs/realtime";
 import { createContext, useContext, useEffect, useState } from "react";
 
 // Define the props for the MediaContext provider
@@ -31,17 +32,21 @@ export type RealtimeType = {
 
 // Define the structure of the context state
 export interface RealtimeAuthorizeStructure {
+    api: RealtimeAuthorize;
     token: string;
+    role: string;
+    channel: string;
 }
 
 // Define the structure for signaling state
 export interface RealtimeSignalingStructure {
+    api: RealtimeSignaling;
     socket: WebSocket | null;
 }
 
 // Define the structure for the connection state
 export interface RealtimeConnectionStructure {
-    peer: RTCPeerConnection | null;
+    api: RealtimeConnection;
 }
 
 // Initial state for the context
