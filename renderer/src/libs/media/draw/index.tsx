@@ -14,6 +14,7 @@
 
 import { MediaDrawStructure } from "@/hooks/context/media";
 
+// Class for managing drawing on a canvas
 export class MediaDraw {
     // Canvas rendering context
     public ctx: CanvasRenderingContext2D | null = null;
@@ -70,6 +71,7 @@ export class MediaDraw {
         this.onLineSegment(last, pos, this.data.current.color, this.data.current.size);
     }
 
+    // Called to end the current drawing stroke
     endDraw(_enevt: PointerEvent) {
         if (!this.data.drawing) return;
         this.data.drawing = false;

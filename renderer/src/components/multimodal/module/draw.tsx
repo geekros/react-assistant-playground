@@ -35,7 +35,7 @@ export function AssistantMultimodalModuleDraw({ className }: AssistantMultimodal
     // Initialize the canvas when the component is mounted
     useEffect(() => {
         setTimeout(() => {
-            const canvas: any = document.getElementById("board");
+            const canvas: any = document.getElementById("multimodal_draw_canvas");
             draw.canvas = canvas;
             update_draw(draw);
             draw.onInit();
@@ -52,7 +52,7 @@ export function AssistantMultimodalModuleDraw({ className }: AssistantMultimodal
                         <AssistantMultimodalModuleDrawTools />
                     </div>
                     <div className="w-full h-full rounded-t-[25px]">
-                        <canvas id="board" className="w-full h-full rounded-t-[25px] cursor-crosshair"></canvas>
+                        <canvas id="multimodal_draw_canvas" className="w-full h-full rounded-t-[25px] cursor-crosshair"></canvas>
                     </div>
                 </div>
             </div>

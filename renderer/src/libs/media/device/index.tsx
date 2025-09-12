@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Class for managing media devices
 export class MediaDevice {
     // Singleton instance
     public stream: MediaStream | null = null;
@@ -35,60 +36,61 @@ export class MediaDevice {
     public onDevicechange: any = null;
 
     // Constructor initializes the MediaStream if available
-    constructor() {
-        if (typeof window !== "undefined" && typeof MediaStream !== "undefined") {
-            this.stream = new MediaStream();
-            navigator.mediaDevices.addEventListener("devicechange", (event: Event) => {
-                if (this.onDevicechange) this.onDevicechange(event);
-            });
-        }
-    }
+    constructor() {}
 
     // Method to get both audio and video streams
     GetMedia(success?: any, error?: any) {
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
-            navigator.mediaDevices
-                .getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                    },
-                    video: {
-                        width: 1280,
-                        height: 720,
-                    },
-                })
-                .then((media_stream: MediaStream) => {
-                    navigator.mediaDevices.enumerateDevices().then((devices: any) => {
-                        devices.forEach((device: any) => {
-                            if (device.kind === "audioinput" && device.label !== "") {
-                                this.audios.push(device);
-                                if (!this.active_audio) this.active_audio = device;
-                            }
-                            if (device.kind === "videoinput" && device.label !== "") {
-                                this.videos.push(device);
-                                if (!this.active_video) this.active_video = device;
-                            }
+        if (typeof window !== "undefined" && typeof MediaStream !== "undefined") {
+            this.stream = new MediaStream();
+            if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+                navigator.mediaDevices
+                    .getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                        },
+                        video: {
+                            width: 1280,
+                            height: 720,
+                        },
+                    })
+                    .then((media_stream: MediaStream) => {
+                        navigator.mediaDevices.addEventListener("devicechange", (event: Event) => {
+                            if (this.onDevicechange) this.onDevicechange(event);
                         });
-                        if (media_stream) {
-                            media_stream.getTracks().forEach((track: MediaStreamTrack) => {
-                                if (track.kind === "audio") {
-                                    this.active_audio_track = track;
+                        navigator.mediaDevices.enumerateDevices().then((devices: any) => {
+                            devices.forEach((device: any) => {
+                                if (device.kind === "audioinput" && device.label !== "") {
+                                    this.audios.push(device);
+                                    if (!this.active_audio) this.active_audio = device;
                                 }
-                                if (track.kind === "video") {
-                                    track.enabled = false;
-                                    this.active_video_track = track;
+                                if (device.kind === "videoinput" && device.label !== "") {
+                                    this.videos.push(device);
+                                    if (!this.active_video) this.active_video = device;
                                 }
-                                this.stream!.addTrack(track);
                             });
-                        }
-                        if (success) success(this.stream, this.audios, this.active_audio, this.active_audio_track, this.videos, this.active_video, this.active_video_track);
+                            if (media_stream) {
+                                media_stream.getTracks().forEach((track: MediaStreamTrack) => {
+                                    if (track.kind === "audio") {
+                                        this.active_audio_track = track;
+                                    }
+                                    if (track.kind === "video") {
+                                        track.enabled = false;
+                                        this.active_video_track = track;
+                                    }
+                                    this.stream!.addTrack(track);
+                                });
+                            }
+                            if (success) success(this.stream, this.audios, this.active_audio, this.active_audio_track, this.videos, this.active_video, this.active_video_track);
+                        });
+                    })
+                    .catch((err: any) => {
+                        error(err);
                     });
-                })
-                .catch((err: any) => {
-                    error(err);
-                });
+            } else {
+                error({ message: "not supported in this browser" });
+            }
         } else {
             error({ message: "not supported in this browser" });
         }

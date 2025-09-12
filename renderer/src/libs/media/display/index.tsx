@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Class for managing media devices
 export class MediaDisplay {
     // Singleton instance
     public stream: MediaStream | null = null;
@@ -23,38 +24,39 @@ export class MediaDisplay {
     public onDevicechange: any = null;
 
     // Event handler for display changes
-    constructor() {
-        if (typeof window !== "undefined" && typeof MediaStream !== "undefined") {
-            this.stream = new MediaStream();
-        }
-    }
+    constructor() {}
 
     // Method to get display stream
     GetDisplay(success?: any, error?: any) {
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function") {
-            navigator.mediaDevices
-                .getDisplayMedia({
-                    video: {
-                        frameRate: { ideal: 30, max: 60 },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                    },
-                    audio: false,
-                })
-                .then((media_stream: MediaStream) => {
-                    // Handle stream inactive event
-                    this.stream?.addEventListener("inactive", (event: Event) => {
-                        this.onDevicechange(event);
+        if (typeof window !== "undefined" && typeof MediaStream !== "undefined") {
+            this.stream = new MediaStream();
+            if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function") {
+                navigator.mediaDevices
+                    .getDisplayMedia({
+                        video: {
+                            frameRate: { ideal: 30, max: 60 },
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                        },
+                        audio: false,
+                    })
+                    .then((media_stream: MediaStream) => {
+                        // Handle stream inactive event
+                        this.stream?.addEventListener("inactive", (event: Event) => {
+                            this.onDevicechange(event);
+                        });
+                        media_stream.getTracks().forEach((track: MediaStreamTrack) => {
+                            this.active_video_track = track;
+                            if (this.stream) this.stream.addTrack(track);
+                        });
+                        if (success) success(media_stream, this.active_video_track);
+                    })
+                    .catch((err: any) => {
+                        error(err);
                     });
-                    media_stream.getTracks().forEach((track: MediaStreamTrack) => {
-                        this.active_video_track = track;
-                        if (this.stream) this.stream.addTrack(track);
-                    });
-                    if (success) success(media_stream, this.active_video_track);
-                })
-                .catch((err: any) => {
-                    error(err);
-                });
+            } else {
+                error({ message: "not supported in this browser" });
+            }
         } else {
             error({ message: "not supported in this browser" });
         }

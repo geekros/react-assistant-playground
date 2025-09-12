@@ -15,6 +15,7 @@
 import { IsLocalHost } from "@/libs/network";
 import { useRequest } from "@/libs/request";
 
+// Class for managing signaling server connection
 export class RealtimeAuthorize {
     // The base URL of the signaling server.
     public baseUrl: string = "https://authorize.geekros.com";
@@ -22,6 +23,7 @@ export class RealtimeAuthorize {
     // The base path of the signaling server.
     public basePath: string = "/handler/oauth/access_token";
 
+    // Initialize the class
     constructor() {}
 
     // Get the access token from the signaling server.

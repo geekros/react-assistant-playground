@@ -23,6 +23,7 @@ export function AssistantMultimodalVisualizerCamera({ className }: AssistantMult
     return (
         <div className={"w-auto h-full transition-all duration-300 ease-in-out " + className}>
             <video id="multimodal_video_stream" className="w-auto h-full rounded-md m-0 p-0" autoPlay playsInline muted></video>
+            <canvas id="multimodal_video_canvas" className="hidden w-auto h-full"></canvas>
         </div>
     );
 }

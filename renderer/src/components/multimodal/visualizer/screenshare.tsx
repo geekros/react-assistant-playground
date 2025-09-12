@@ -23,6 +23,7 @@ export function AssistantMultimodalVisualizerScreenshare({ className }: Assistan
     return (
         <div className={"w-auto h-full " + className}>
             <video id="multimodal_screenshare_stream" className="w-auto h-full rounded-md m-0 p-0" autoPlay playsInline muted></video>
+            <canvas id="multimodal_screenshare_canvas" className="hidden w-auto h-full"></canvas>
         </div>
     );
 }

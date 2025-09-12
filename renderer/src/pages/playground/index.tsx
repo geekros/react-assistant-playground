@@ -20,7 +20,7 @@ import { ThemeMode } from "@/components/theme/mode";
 import { useLanguage } from "@/hooks/context/language";
 import { useMediaDevice } from "@/hooks/context/media";
 import { GitHubLogoIcon } from "@radix-ui/react-icons";
-import { LoaderCircleIcon } from "lucide-react";
+import { LoaderCircleIcon, OctagonAlertIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AssistantMultimodalModuleInput } from "@/components/multimodal/module/input";
@@ -37,6 +37,7 @@ import { AssistantMultimodalVisualizerScreenshare } from "@/components/multimoda
 import { RealtimeContext, useRealtime } from "@/hooks/context/realtime";
 import { useLibs } from "@/libs";
 import { SignalingMessage } from "@/libs/realtime/signaling";
+import { DataChannelMessage } from "@/libs/realtime/connection";
 
 // Playground properties
 export type PlaygroundProps = {
@@ -50,6 +51,11 @@ export type PlaygroundProps = {
         hidden: boolean;
         input: string;
         send_loading: boolean;
+    };
+    task: {
+        camera: NodeJS.Timeout | null;
+        screenshare: NodeJS.Timeout | null;
+        draw: NodeJS.Timeout | null;
     };
 };
 
@@ -65,6 +71,11 @@ const playground_state: PlaygroundProps = {
         hidden: true,
         input: "",
         send_loading: false,
+    },
+    task: {
+        camera: null,
+        screenshare: null,
+        draw: null,
     },
 };
 
@@ -94,6 +105,7 @@ export function PagePlaygroundIndex() {
 
         // Toggle screenshare
         if (screenshare.initialization) {
+            // Stop screenshare
             connection.api.removeTrack(screenshare.active_device_track);
             update_connection(connection);
             onDisplayClose();
@@ -116,8 +128,10 @@ export function PagePlaygroundIndex() {
                 update_screenshare(screenshare);
 
                 // Add tracks to the peer connection
-                connection.api.addTracks(screenshare.stream);
+                connection.api.addTracks("screenshare", screenshare.stream);
                 update_connection(connection);
+                // Create and send an offer to the remote peer
+                connection.api.createOffer();
 
                 // Handle successful media stream
                 setTimeout(() => {
@@ -129,13 +143,17 @@ export function PagePlaygroundIndex() {
                         };
                     }
                 }, 500);
+
+                // Update playground state
+                playground.error = "";
+                update(playground);
             },
             (error: any) => {
                 // Handle error
                 screenshare.loading = false;
                 screenshare.initialization = false;
                 update_screenshare(screenshare);
-                playground.error = error.message;
+                playground.error = error.message === "Permission denied by user" ? "" : error.message;
                 update(playground);
             }
         );
@@ -319,9 +337,32 @@ export function PagePlaygroundIndex() {
         connection.api = useLibs.realtime.connection;
         update_connection(connection);
         // Establish peer connection
-        connection.api.createConnection(stun_urls, microphone.stream, camera.stream, (event: any) => {
+        connection.api.createConnection(stun_urls, (event: any) => {
             if (event.type && event.type !== "") {
                 switch (event.type) {
+                    case "realtime:connection:created":
+                        // Add tracks to the peer connection
+                        connection.api.addTracks("audio", microphone.stream);
+                        update_connection(connection);
+                        connection.api.addTracks("video", camera.stream);
+                        update_connection(connection);
+                        // Create and send an offer to the remote peer
+                        connection.api.createOffer();
+                        break;
+                    case "realtime:connection:track:added":
+                        const message_track_added: SignalingMessage = {
+                            event: "client:track:added",
+                            data: {
+                                channel: authorize.channel,
+                                from: "human",
+                                target: "signaling",
+                                content: JSON.stringify({ id: event.track_id, type: event.track_type }),
+                            },
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send offer via signaling server
+                        signaling.socket?.send(JSON.stringify(message_track_added));
+                        break;
                     case "realtime:connection:offer":
                         // Initialize offer message
                         const message_offer: SignalingMessage = {
@@ -361,6 +402,16 @@ export function PagePlaygroundIndex() {
 
     // Handle connection close
     function onConnectionClose() {
+        // Clear Camera intervals
+        if (playground.task.camera) {
+            clearInterval(playground.task.camera);
+            playground.task.camera = null;
+        }
+        // Clear Screenshare intervals
+        if (playground.task.screenshare) {
+            clearInterval(playground.task.screenshare);
+            playground.task.screenshare = null;
+        }
         playground.message.input = "";
         playground.message.send_loading = false;
         playground.message.hidden = true;
@@ -377,6 +428,121 @@ export function PagePlaygroundIndex() {
         connection.api.close();
         update_connection(connection);
     }
+
+    useEffect(() => {
+        if (playground.connected) {
+            if (!playground.draw.hidden) {
+                playground.task.draw = setInterval(() => {
+                    const canvas: any = document.getElementById("multimodal_draw_canvas");
+                    if (canvas) {
+                        const base64Image = canvas.toDataURL("image/jpeg", 0.8);
+                        // Send image data via data channel
+                        const media_message: DataChannelMessage = {
+                            event: "draw:image:data",
+                            data: base64Image,
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send image data via data channel
+                        connection.api.sendDataChannelMessage("media", media_message);
+                    }
+                }, 50);
+            } else {
+                if (playground.task.draw) {
+                    clearInterval(playground.task.draw);
+                    playground.task.draw = null;
+                    update(playground);
+                    // Send image data via data channel
+                    const media_message: DataChannelMessage = {
+                        event: "draw:image:clear",
+                        data: "",
+                        Time: Math.floor(Date.now() / 1000),
+                    };
+                    // Send image data via data channel
+                    connection.api.sendDataChannelMessage("media", media_message);
+                }
+            }
+        }
+    }, [playground.draw.hidden]);
+
+    useEffect(() => {
+        if (playground.connected) {
+            if (!screenshare.enabled) {
+                // Add tracks to the peer connection
+                playground.task.screenshare = setInterval(() => {
+                    const video: any = document.getElementById("multimodal_screenshare_stream");
+                    const canvas: any = document.getElementById("multimodal_screenshare_canvas");
+                    if (video && canvas) {
+                        const context = canvas.getContext("2d");
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        // Base64 encode the image data
+                        const base64Image = canvas.toDataURL("image/jpeg", 0.8);
+                        // Send image data via data channel
+                        const media_message: DataChannelMessage = {
+                            event: "screenshare:image:data",
+                            data: base64Image,
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send image data via data channel
+                        connection.api.sendDataChannelMessage("media", media_message);
+                    }
+                }, 50);
+            } else {
+                if (playground.task.screenshare) {
+                    clearInterval(playground.task.screenshare);
+                    playground.task.screenshare = null;
+                    update(playground);
+                    // Send image data via data channel
+                    const media_message: DataChannelMessage = {
+                        event: "screenshare:image:clear",
+                        data: "",
+                        Time: Math.floor(Date.now() / 1000),
+                    };
+                    // Send image data via data channel
+                    connection.api.sendDataChannelMessage("media", media_message);
+                }
+            }
+        }
+    }, [screenshare.enabled]);
+
+    useEffect(() => {
+        // Only proceed if connected
+        if (playground.connected) {
+            // If camera is disabled, clear the interval task
+            if (!camera.enabled) {
+                playground.task.camera = setInterval(() => {
+                    const video: any = document.getElementById("multimodal_video_stream");
+                    const canvas: any = document.getElementById("multimodal_video_canvas");
+                    if (video && canvas) {
+                        const context = canvas.getContext("2d");
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        // Base64 encode the image data
+                        const base64Image = canvas.toDataURL("image/jpeg", 0.8);
+                        // Send image data via data channel
+                        const media_message: DataChannelMessage = {
+                            event: "camera:image:data",
+                            data: base64Image,
+                            Time: Math.floor(Date.now() / 1000),
+                        };
+                        // Send image data via data channel
+                        connection.api.sendDataChannelMessage("media", media_message);
+                    }
+                }, 50);
+            } else {
+                // Send image data via data channel
+                const media_message: DataChannelMessage = {
+                    event: "camera:image:clear",
+                    data: "",
+                    Time: Math.floor(Date.now() / 1000),
+                };
+                // Send image data via data channel
+                connection.api.sendDataChannelMessage("media", media_message);
+            }
+        }
+    }, [camera.enabled]);
 
     // Set document title on mount
     useEffect(() => {
@@ -404,27 +570,41 @@ export function PagePlaygroundIndex() {
                     <main className="w-full h-[calc(100%-32px)]">
                         <div className="w-full h-full">
                             <div className="w-full h-full">
-                                <div className="w-full h-full relative z-10000">
-                                    <div
-                                        data-message={playground.message.hidden && playground.draw.hidden}
-                                        className="w-full h-full transition-all duration-300 data-[message=false]:py-[10px] data-[message=false]:h-[143px] absolute top-0 left-0 right-0 max-w-2xl mx-auto flex items-center justify-center space-x-2"
-                                    >
-                                        <div className="w-full h-auto">
-                                            <AssistantMultimodalModuleAssistant playground={playground} />
+                                {playground.error && playground.error !== "" ? (
+                                    <div className="w-full h-full relative z-10000">
+                                        <div className="w-full h-full flex items-center justify-center">
+                                            <div className="w-[320px] px-4 py-6 rounded-md flex flex-col items-center justify-center space-y-1 bg-background">
+                                                <div className="w-auto">
+                                                    <OctagonAlertIcon className="w-9 h -9" />
+                                                </div>
+                                                <div className="w-auto text-sm text-muted-foreground">{playground.error}</div>
+                                            </div>
                                         </div>
-                                        {!camera.enabled && camera.initialization && playground.connected && (
-                                            <div data-message={playground.message.hidden && playground.draw.hidden} className="w-full data-[message=false]:h-[123px]">
-                                                <AssistantMultimodalVisualizerCamera />
-                                            </div>
-                                        )}
-                                        {!screenshare.enabled && screenshare.initialization && playground.connected && (
-                                            <div data-message={playground.message.hidden && playground.draw.hidden} className="w-full data-[message=false]:h-[123px]">
-                                                <AssistantMultimodalVisualizerScreenshare />
-                                            </div>
-                                        )}
                                     </div>
-                                    {!playground.message.hidden && <AssistantMultimodalModuleChat />}
-                                </div>
+                                ) : (
+                                    <div className="w-full h-full relative z-10000">
+                                        <div
+                                            data-message={playground.message.hidden && playground.draw.hidden}
+                                            className="w-full h-full transition-all duration-300 data-[message=false]:py-[10px] data-[message=false]:h-[143px] absolute top-0 left-0 right-0 max-w-2xl mx-auto flex items-center justify-center space-x-2"
+                                        >
+                                            <div className="w-full h-auto">
+                                                <AssistantMultimodalModuleAssistant playground={playground} />
+                                            </div>
+                                            {!camera.enabled && camera.initialization && playground.connected && (
+                                                <div data-message={playground.message.hidden && playground.draw.hidden} className="w-full data-[message=false]:h-[123px]">
+                                                    <AssistantMultimodalVisualizerCamera />
+                                                </div>
+                                            )}
+                                            {!screenshare.enabled && screenshare.initialization && playground.connected && (
+                                                <div data-message={playground.message.hidden && playground.draw.hidden} className="w-full data-[message=false]:h-[123px]">
+                                                    <AssistantMultimodalVisualizerScreenshare />
+                                                </div>
+                                            )}
+                                        </div>
+                                        {!playground.message.hidden && <AssistantMultimodalModuleChat />}
+                                    </div>
+                                )}
+
                                 <div className="w-full h-auto mx-auto max-w-2xl border rounded-[25px] bg-background drop-shadow-md/3 fixed bottom-[35px] left-0 right-0 z-50000">
                                     {!playground.message.hidden && (
                                         <div className="w-full h-auto">

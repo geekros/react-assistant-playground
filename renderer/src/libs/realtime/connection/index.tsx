@@ -12,6 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Interface for data channel messages
+export interface DataChannelMessage {
+    event: string;
+    data: string;
+    Time: number;
+}
+
+// Class for managing WebRTC connection
 export class RealtimeConnection {
     // The RTCPeerConnection instance.
     public peerConnection: RTCPeerConnection | null = null;
@@ -26,36 +34,22 @@ export class RealtimeConnection {
     public chat_data_channel: RTCDataChannel | null = null;
 
     // The RTCDataChannel instance.
-    public draw_data_channel: RTCDataChannel | null = null;
+    public media_data_channel: RTCDataChannel | null = null;
 
     // The callback function to handle events.
     public callback: any = null;
 
-    // The RTCDataChannel instance.
+    // Initialize the class
     constructor() {}
 
     // Create a new RTCPeerConnection.
-    createConnection(stun_urls: string[], audio: MediaStream, video: MediaStream, callback: any): RealtimeConnection {
+    createConnection(stun_urls: string[], callback: any): RealtimeConnection {
         // Store the callback function.
         this.callback = callback;
 
         // Use Google's public STUN server for ICE candidates.
         this.peerConnection = new RTCPeerConnection({
             iceServers: [{ urls: stun_urls }],
-        });
-
-        // Add audio tracks to the peer connection.
-        audio.getTracks().forEach((track: MediaStreamTrack) => {
-            if (track.kind === "audio") {
-                this.peerConnection?.addTrack(track, audio);
-            }
-        });
-
-        // Add video tracks to the peer connection.
-        video.getTracks().forEach((track: MediaStreamTrack) => {
-            if (track.kind === "video") {
-                this.peerConnection?.addTrack(track, video);
-            }
         });
 
         // Handle incoming tracks.
@@ -67,6 +61,7 @@ export class RealtimeConnection {
             }
         };
 
+        // Handle incoming data channels.
         this.peerConnection.ondatachannel = (event: RTCDataChannelEvent) => {
             console.log("Data channel received:", event);
         };
@@ -84,15 +79,17 @@ export class RealtimeConnection {
         };
 
         // Handle connection state changes.
-        this.chat_data_channel = this.peerConnection.createDataChannel("chat");
+        this.chat_data_channel = this.createDataChannel("chat");
 
         // Create a data channel for drawing data.
-        this.draw_data_channel = this.peerConnection.createDataChannel("draw");
+        this.media_data_channel = this.createDataChannel("media");
 
-        // Create an offer to initiate the connection.
-        this.createOffer();
+        // Notify that the connection has been created.
+        this.callback({
+            type: "realtime:connection:created",
+        });
 
-        // Log signaling state changes.
+        // Return the instance for chaining.
         return this;
     }
 
@@ -101,6 +98,7 @@ export class RealtimeConnection {
         // If the peer connection doesn't exist, return early.
         if (!this.peerConnection) return;
 
+        // Create an offer to initiate the connection.
         this.peerConnection
             .createOffer({
                 offerToReceiveAudio: true,
@@ -116,16 +114,79 @@ export class RealtimeConnection {
             });
     }
 
+    // Create DataChannel for protocol messages
+    createDataChannel(label: string): RTCDataChannel | null {
+        // If the peer connection doesn't exist, return early.
+        if (!this.peerConnection) return null;
+
+        // Create a data channel for protocol messages.
+        const dataChannel = this.peerConnection.createDataChannel(label);
+
+        // handle data channel opening.
+        dataChannel.onopen = (event: Event) => {
+            console.log("Event data channel opened:", label, event);
+            this.callback({
+                type: "realtime:connection:" + label + ":datachannel:open",
+            });
+        };
+
+        // Handle incoming messages on the data channel.
+        dataChannel.onmessage = (event: MessageEvent) => {
+            // Parse the incoming message.
+            const message = JSON.parse(event.data);
+            // Send the message event to the callback.
+            this.callback({
+                type: "realtime:connection:" + label + ":datachannel:message",
+                message: message,
+            });
+        };
+
+        // handle errors on the data channel.
+        dataChannel.onerror = (event: Event) => {
+            console.log("Event data channel error:", label, event);
+            // Send the error event to the callback.
+            this.callback({
+                type: "realtime:connection:" + label + ":datachannel:error",
+                error: event,
+            });
+        };
+
+        // handle data channel closure.
+        dataChannel.onclose = (event: Event) => {
+            console.log("Event data channel closed:", label, event);
+            // Send the close event to the callback.
+            this.callback({
+                type: "realtime:connection:" + label + ":datachannel:close",
+            });
+        };
+
+        // Retun the created data channel.
+        return dataChannel;
+    }
+
     // Add tracks to the peer connection.
-    addTracks(media: MediaStream) {
-        console.log("Adding tracks to the peer connection:", media);
+    addTracks(type: string, media: MediaStream) {
         // Add audio tracks to the peer connection.
         media.getTracks().forEach((track: MediaStreamTrack) => {
-            console.log("Adding audio track:", track);
-            this.peerConnection?.addTrack(track, media);
+            // Add the track if it matches the specified type.
+            if (track.kind === type) {
+                this.peerConnection?.addTrack(track, media);
+                this.callback({
+                    type: "realtime:connection:track:added",
+                    track_id: track.id,
+                    track_type: type,
+                });
+            }
+            // Add screen share video tracks to the peer connection.
+            if (type === "screenshare" && track.kind === "video") {
+                this.peerConnection?.addTrack(track, media);
+                this.callback({
+                    type: "realtime:connection:track:added",
+                    track_id: track.id,
+                    track_type: type,
+                });
+            }
         });
-        // Update a new offer after adding tracks.
-        this.createOffer();
     }
 
     // Remove tracks from the peer connection.
@@ -142,6 +203,25 @@ export class RealtimeConnection {
         this.createOffer();
     }
 
+    // Send a message via the data channel.
+    sendDataChannelMessage(label: string, message: DataChannelMessage) {
+        // Select the appropriate data channel based on the label.
+        let dataChannel: RTCDataChannel | null = null;
+
+        // If the label is "chat", use the chat data channel.
+        if (label === "chat") {
+            dataChannel = this.chat_data_channel;
+        }
+        // If the label is "media", use the media data channel.
+        if (label === "media") {
+            dataChannel = this.media_data_channel;
+        }
+        // If the data channel exists and is open, send the message.
+        if (dataChannel && dataChannel.readyState === "open") {
+            dataChannel.send(JSON.stringify(message));
+        }
+    }
+
     // Close the RTCPeerConnection.
     close() {
         // If the peer connection exists, close it and clean up.
@@ -150,15 +230,19 @@ export class RealtimeConnection {
             this.peerConnection.getSenders().forEach((sender: RTCRtpSender) => {
                 this.peerConnection?.removeTrack(sender);
             });
+
             // Clear the remote audio track.
             this.remote_audio_track = null;
+
             // Clear the data channels.
+            this.chat_data_channel?.close();
             this.chat_data_channel = null;
-            this.draw_data_channel = null;
+            this.media_data_channel?.close();
+            this.media_data_channel = null;
+
             // Close the peer connection.
             this.peerConnection.close();
-            // Clear the Callback.
-            this.callback = null;
+
             // Clean up.
             this.peerConnection = null;
         }

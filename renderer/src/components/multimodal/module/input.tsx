@@ -15,6 +15,9 @@
 import { Button } from "@/components/base/button";
 import { Input } from "@/components/base/input";
 import { useLanguage } from "@/hooks/context/language";
+import { useRealtime } from "@/hooks/context/realtime";
+import { DataChannelMessage } from "@/libs/realtime/connection";
+import { SignalingMessage } from "@/libs/realtime/signaling";
 import { PlaygroundProps } from "@/pages/playground";
 import { LoaderCircleIcon } from "lucide-react";
 
@@ -29,6 +32,9 @@ export function AssistantMultimodalModuleInput({ className, playground, playgrou
     // Get language context
     const { lang } = useLanguage();
 
+    // Realtime context
+    const { connection } = useRealtime();
+
     // Handle message input change
     function onMessageEvent(event: any) {
         playground.message.input = event.target.value;
@@ -37,14 +43,26 @@ export function AssistantMultimodalModuleInput({ className, playground, playgrou
 
     // Handle message send action
     function onSendMessage() {
+        // if not connected, do nothing
         if (!playground.connected) return;
+
+        // update the message send state
         playground.message.send_loading = true;
         playground_update(playground);
-        setTimeout(() => {
-            playground.message.input = "";
-            playground.message.send_loading = false;
-            playground_update(playground);
-        }, 2000);
+
+        // Create a chat message object
+        const chat_message: DataChannelMessage = {
+            event: "chat:message:input",
+            data: playground.message.input,
+            Time: Math.floor(Date.now() / 1000),
+        };
+        // Send image data via data channel
+        connection.api.sendDataChannelMessage("chat", chat_message);
+
+        // Update playground state
+        // playground.message.input = "";
+        // playground.message.send_loading = false;
+        // playground_update(playground);
     }
 
     // Handle the message input event
