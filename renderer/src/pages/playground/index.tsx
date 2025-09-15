@@ -207,7 +207,7 @@ export function PagePlaygroundIndex() {
         authorize.api = useLibs.realtime.authorize;
         update_authorize(authorize);
         // Request access token
-        authorize.api.accesstoken("human", (data: any) => {
+        authorize.api.accesstoken("browser", (data: any) => {
             if (data.code === 0) {
                 // Save token to context
                 authorize.token = data.data.access_token;
@@ -547,7 +547,10 @@ export function PagePlaygroundIndex() {
     // Set document title on mount
     useEffect(() => {
         document.title = "GEEKROS TEST PLAYGROUND";
-        return () => {};
+        return () => {
+            // Clean up on unmount
+            onConnectionClose();
+        };
     }, []);
 
     // Render the playground UI
