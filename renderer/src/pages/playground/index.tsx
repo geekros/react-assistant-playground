@@ -339,7 +339,12 @@ export function PagePlaygroundIndex() {
         // Establish peer connection
         connection.api.createConnection(stun_urls, (event: any) => {
             if (event.type && event.type !== "") {
+                console.log("[realtime:connection]", event.type, event);
                 switch (event.type) {
+                    case "response.done":
+                        playground.message.send_loading = false;
+                        update(playground);
+                        break;
                     case "realtime:connection:created":
                         // Add tracks to the peer connection
                         connection.api.addTracks("audio", microphone.stream);
@@ -354,7 +359,7 @@ export function PagePlaygroundIndex() {
                             event: "client:track:added",
                             data: {
                                 channel: authorize.channel,
-                                from: "human",
+                                from: "browser",
                                 target: "signaling",
                                 content: JSON.stringify({ id: event.track_id, type: event.track_type }),
                             },
@@ -369,7 +374,7 @@ export function PagePlaygroundIndex() {
                             event: "client:offer",
                             data: {
                                 channel: authorize.channel,
-                                from: "human",
+                                from: "browser",
                                 target: "signaling",
                                 content: event.sdp,
                             },
@@ -384,7 +389,7 @@ export function PagePlaygroundIndex() {
                             event: "client:candidate",
                             data: {
                                 channel: authorize.channel,
-                                from: "human",
+                                from: "browser",
                                 target: "signaling",
                                 content: event.candidate,
                             },
@@ -406,26 +411,28 @@ export function PagePlaygroundIndex() {
         if (playground.task.camera) {
             clearInterval(playground.task.camera);
             playground.task.camera = null;
+            update(playground);
         }
         // Clear Screenshare intervals
         if (playground.task.screenshare) {
             clearInterval(playground.task.screenshare);
             playground.task.screenshare = null;
+            update(playground);
         }
         playground.message.input = "";
         playground.message.send_loading = false;
         playground.message.hidden = true;
         playground.draw.hidden = true;
         playground.error = "";
-        playground.connected = !playground.connected;
+        playground.connected = false;
         playground.connected_loading = false;
         update(playground);
         draw.onClear(true);
         device.onClose();
         display.onClose();
-        signaling.api.close();
+        signaling.api?.close();
         update_signaling(signaling);
-        connection.api.close();
+        connection.api?.close();
         update_connection(connection);
     }
 
@@ -434,16 +441,27 @@ export function PagePlaygroundIndex() {
             if (!playground.draw.hidden) {
                 playground.task.draw = setInterval(() => {
                     const canvas: any = document.getElementById("multimodal_draw_canvas");
-                    if (canvas) {
-                        const base64Image = canvas.toDataURL("image/jpeg", 0.8);
-                        // Send image data via data channel
-                        const media_message: DataChannelMessage = {
-                            event: "draw:image:data",
-                            data: base64Image,
-                            Time: Math.floor(Date.now() / 1000),
-                        };
-                        // Send image data via data channel
-                        connection.api.sendDataChannelMessage("media", media_message);
+                    const canvas_temp: any = document.getElementById("multimodal_draw_canvas_temp");
+                    if (canvas && canvas_temp) {
+                        // Set canvas dimensions
+                        canvas_temp.width = canvas.width;
+                        canvas_temp.height = canvas.height;
+                        // Get the 2D context of the temporary canvas
+                        const canvas_temp_ctx = canvas_temp.getContext("2d");
+                        if (canvas_temp_ctx) {
+                            canvas_temp_ctx.fillStyle = "#ffffff";
+                            canvas_temp_ctx.fillRect(0, 0, canvas_temp.width, canvas_temp.height);
+                            canvas_temp_ctx.drawImage(canvas, 0, 0);
+                            const base64Image = canvas_temp.toDataURL("image/jpeg", 0.8);
+                            // Send image data via data channel
+                            const media_message: DataChannelMessage = {
+                                event: "draw:image:data",
+                                data: base64Image,
+                                Time: Math.floor(Date.now() / 1000),
+                            };
+                            // Send image data via data channel
+                            connection.api.sendDataChannelMessage("media", media_message);
+                        }
                     }
                 }, 50);
             } else {
@@ -532,14 +550,19 @@ export function PagePlaygroundIndex() {
                     }
                 }, 50);
             } else {
-                // Send image data via data channel
-                const media_message: DataChannelMessage = {
-                    event: "camera:image:clear",
-                    data: "",
-                    Time: Math.floor(Date.now() / 1000),
-                };
-                // Send image data via data channel
-                connection.api.sendDataChannelMessage("media", media_message);
+                if (playground.task.camera) {
+                    clearInterval(playground.task.camera);
+                    playground.task.camera = null;
+                    update(playground);
+                    // Send image data via data channel
+                    const media_message: DataChannelMessage = {
+                        event: "camera:image:clear",
+                        data: "",
+                        Time: Math.floor(Date.now() / 1000),
+                    };
+                    // Send image data via data channel
+                    connection.api.sendDataChannelMessage("media", media_message);
+                }
             }
         }
     }, [camera.enabled]);
@@ -547,7 +570,13 @@ export function PagePlaygroundIndex() {
     // Set document title on mount
     useEffect(() => {
         document.title = "GEEKROS TEST PLAYGROUND";
+
+        // Handle connection close on beforeunload
+        window.addEventListener("beforeunload", onConnectionClose);
+
         return () => {
+            // Remove event listener on unmount
+            window.removeEventListener("beforeunload", onConnectionClose);
             // Clean up on unmount
             onConnectionClose();
         };

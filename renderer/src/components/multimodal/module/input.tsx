@@ -60,9 +60,8 @@ export function AssistantMultimodalModuleInput({ className, playground, playgrou
         connection.api.sendDataChannelMessage("chat", chat_message);
 
         // Update playground state
-        // playground.message.input = "";
-        // playground.message.send_loading = false;
-        // playground_update(playground);
+        playground.message.input = "";
+        playground_update(playground);
     }
 
     // Handle the message input event

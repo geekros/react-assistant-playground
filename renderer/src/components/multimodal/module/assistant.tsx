@@ -58,6 +58,7 @@ export function AssistantMultimodalModuleAssistant({ className, playground }: As
     // Handle the message input event
     return (
         <div className={"w-full h-full flex items-center justify-center " + className}>
+            <audio id="agent_audio_stream" className="hidden"></audio>
             <div className="w-full h-[100px] flex items-center justify-center space-x-3">
                 {Array.from({ length: 5 }).map((_, i) => {
                     const isCenter = i === 2;

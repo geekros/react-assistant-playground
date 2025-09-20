@@ -58,6 +58,11 @@ export class RealtimeConnection {
             if (event.track.kind === "audio") {
                 // Store the remote audio track.
                 this.remote_audio_track = event.track;
+                const audio: any = document.getElementById("agent_audio_stream");
+                audio.srcObject = event.streams[0];
+                audio.onloadedmetadata = function (_e: any) {
+                    audio.play();
+                };
             }
         };
 
@@ -126,18 +131,19 @@ export class RealtimeConnection {
         dataChannel.onopen = (event: Event) => {
             console.log("Event data channel opened:", label, event);
             this.callback({
-                type: "realtime:connection:" + label + ":datachannel:open",
+                type: "realtime:connection:datachannel:open",
             });
         };
 
         // Handle incoming messages on the data channel.
         dataChannel.onmessage = (event: MessageEvent) => {
-            // Parse the incoming message.
-            const message = JSON.parse(event.data);
+            const decoder = new TextDecoder("utf-8");
+            const json_string: any = decoder.decode(event.data);
+            const json_data = JSON.parse(json_string);
             // Send the message event to the callback.
             this.callback({
-                type: "realtime:connection:" + label + ":datachannel:message",
-                message: message,
+                type: json_data.event,
+                message: json_data.data,
             });
         };
 

@@ -53,6 +53,7 @@ export function AssistantMultimodalModuleDraw({ className }: AssistantMultimodal
                     </div>
                     <div className="w-full h-full rounded-t-[25px]">
                         <canvas id="multimodal_draw_canvas" className="w-full h-full rounded-t-[25px] cursor-crosshair"></canvas>
+                        <canvas id="multimodal_draw_canvas_temp" className="hidden"></canvas>
                     </div>
                 </div>
             </div>
